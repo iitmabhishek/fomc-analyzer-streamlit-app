@@ -1,0 +1,9 @@
+google-generativeai
+fredapi
+pydantic
+beautifulsoup4
+plotly
+pandas
+matplotlib
+requests
+streamlit
