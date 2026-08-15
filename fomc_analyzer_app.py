@@ -8,8 +8,8 @@ from bs4 import BeautifulSoup
 from typing import Literal
 from pydantic import BaseModel, Field
 from fredapi import Fred
-import google.genai as genai # Updated import
-from tenacity import retry, wait_exponential, stop_after_attempt, RetriableError # Import tenacity
+import google.genai as genai # Updated import to google.genai
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type # Import retry_if_exception_type
 
 # Import protos from google.genai.client for Schema conversion
 from google.genai.client import get_default_retriever_async_client, get_default_retriever_client
@@ -28,6 +28,12 @@ FRED_API_KEY = os.environ.get('FRED_API_KEY') or "YOUR_FRED_API_KEY"
 
 fred = Fred(api_key=FRED_API_KEY)
 genai.configure(api_key=GEMINI_API_KEY) # Configure the API key globally
+
+# ---------------------------------------------------------
+# Define a custom retry condition for Gemini API rate limits
+def is_gemini_quota_exceeded(exception: BaseException) -> bool:
+    """Returns True if the exception is a Gemini ClientError due to quota exhaustion."""
+    return isinstance(exception, genai.types.ClientError) and exception.response.status_code == 429
 
 # ---------------------------------------------------------
 # 2. Automated FOMC Statement Scraper
@@ -99,7 +105,7 @@ class FOMCSentiment(BaseModel):
     wait=wait_exponential(multiplier=1, min=4, max=10),
     stop=stop_after_attempt(5),
     reraise=True,
-    retry=(RetriableError)
+    retry=retry_if_exception_type(genai.types.ClientError) # Use custom retry condition
 )
 @st.cache_data(ttl=3600) # Cache results for 1 hour
 def analyze_historical_statements(statements_dict: dict[str, str]) -> list[FOMCSentiment]:
@@ -137,8 +143,10 @@ def analyze_historical_statements(statements_dict: dict[str, str]) -> list[FOMCS
         except genai.types.ClientError as e:
             st.error(f"Gemini API error for {date_str}: {e}")
             # If it's a retriable error (e.g., quota), re-raise to trigger tenacity retry
-            if e.response.status_code == 429: # Resource Exhausted
-                raise RetriableError(f"Rate limit exceeded for {date_str}") from e
+            if e.response.status_code == 429:
+                # If we want tenacity to retry this, re-raise it. 
+                # tenacity.retry_if_exception_type(genai.types.ClientError) will catch it.
+                raise e 
             else:
                 # For other client errors, just log and continue or handle as appropriate
                 st.warning(f"Skipping {date_str} due to non-retriable Gemini API error.")
@@ -190,7 +198,7 @@ def plot_macro_and_commentary_timeline(macro_df: pd.DataFrame, sentiments: list[
     wait=wait_exponential(multiplier=1, min=4, max=10),
     stop=stop_after_attempt(5),
     reraise=True,
-    retry=(RetriableError)
+    retry=retry_if_exception_type(genai.types.ClientError) # Use custom retry condition
 )
 @st.cache_data(ttl=3600) # Cache results for 1 hour
 def generate_macro_pattern_synthesis(macro_df: pd.DataFrame, sentiments: list[FOMCSentiment]) -> str:
@@ -239,8 +247,8 @@ def generate_macro_pattern_synthesis(macro_df: pd.DataFrame, sentiments: list[FO
         return response.text
     except genai.types.ClientError as e:
         st.error(f"Gemini API error during pattern synthesis: {e}")
-        if e.response.status_code == 429: # Resource Exhausted
-            raise RetriableError(f"Rate limit exceeded for pattern synthesis") from e
+        if e.response.status_code == 429:
+            raise e # Re-raise to trigger tenacity retry
         else:
             st.warning(f"Skipping pattern synthesis due to non-retriable Gemini API error.")
             return ""
