@@ -115,7 +115,7 @@ def analyze_historical_statements(statements_dict: dict[str, str]) -> list[FOMCS
             contents=prompt,
             config={
                 "response_mime_type": "application/json",
-                "response_schema": FOMCSentiment,
+                "response_schema": FOMCSentiment.model_json_schema(), # Pass JSON schema
                 "temperature": 0.0 # Keep temperature low for deterministic output
             }
         )
@@ -204,7 +204,7 @@ def generate_macro_pattern_synthesis(macro_df: pd.DataFrame, sentiments: list[FO
         model_name="gemini-2.5-flash"
     ).generate_content(
         contents=prompt,
-        config={"temperature": 0.2}
+        config={"temperature": 0.2, "response_schema": FOMCSentiment.model_json_schema()}
     )
     return response.text
 
