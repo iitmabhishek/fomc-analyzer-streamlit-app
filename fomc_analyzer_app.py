@@ -8,7 +8,12 @@ from bs4 import BeautifulSoup
 from typing import Literal
 from pydantic import BaseModel, Field
 from fredapi import Fred
-import google.generativeai as genai
+import google.genai as genai # Updated import
+from tenacity import retry, wait_exponential, stop_after_attempt, RetriableError # Import tenacity
+
+# Import protos from google.genai.client for Schema conversion
+from google.genai.client import get_default_retriever_async_client, get_default_retriever_client
+from google.genai import protos
 
 # Streamlit specific imports
 import streamlit as st
@@ -23,7 +28,6 @@ FRED_API_KEY = os.environ.get('FRED_API_KEY') or "YOUR_FRED_API_KEY"
 
 fred = Fred(api_key=FRED_API_KEY)
 genai.configure(api_key=GEMINI_API_KEY) # Configure the API key globally
-# client = genai.Client() # Removed - not needed with genai.configure()
 
 # ---------------------------------------------------------
 # 2. Automated FOMC Statement Scraper
@@ -91,6 +95,12 @@ class FOMCSentiment(BaseModel):
     action_taken: Literal["Hike", "Pause / Hold", "Cut"] = Field(description="Rate decision enacted in this statement.")
     key_forward_guidance_quote: str = Field(description="Verbatim key quote signaling the future policy path.")
 
+@retry(
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    stop=stop_after_attempt(5),
+    reraise=True,
+    retry=(RetriableError)
+)
 @st.cache_data(ttl=3600) # Cache results for 1 hour
 def analyze_historical_statements(statements_dict: dict[str, str]) -> list[FOMCSentiment]:
     """
@@ -98,6 +108,9 @@ def analyze_historical_statements(statements_dict: dict[str, str]) -> list[FOMCS
     """
     parsed_results = []
     st.info(f"🤖 Processing and scoring {len(statements_dict)} historical FOMC statements...")
+
+    # Convert Pydantic schema to protos.Schema
+    fomc_sentiment_schema = protos.Schema.from_dict(FOMCSentiment.model_json_schema())
 
     for date_str, text in statements_dict.items():
         if not text:
@@ -113,13 +126,22 @@ def analyze_historical_statements(statements_dict: dict[str, str]) -> list[FOMCS
             model_name="gemini-2.5-flash", # Using a fast model for sentiment analysis
             generation_config={
                 "response_mime_type": "application/json",
-                "response_schema": FOMCSentiment.model_json_schema(), # Pass JSON schema
+                "response_schema": fomc_sentiment_schema, # Pass protos.Schema
                 "temperature": 0.0 # Keep temperature low for deterministic output
             }
         )
-        response = model.generate_content(contents=prompt)
-        parsed_results.append(response.parsed)
-        st.write(f"  ✓ Processed {date_str}: Score = {response.parsed.hawkish_score:+.2f} ({response.parsed.action_taken})")
+        try:
+            response = model.generate_content(contents=prompt)
+            parsed_results.append(response.parsed)
+            st.write(f"  ✓ Processed {date_str}: Score = {response.parsed.hawkish_score:+.2f} ({response.parsed.action_taken})")
+        except genai.types.ClientError as e:
+            st.error(f"Gemini API error for {date_str}: {e}")
+            # If it's a retriable error (e.g., quota), re-raise to trigger tenacity retry
+            if e.response.status_code == 429: # Resource Exhausted
+                raise RetriableError(f"Rate limit exceeded for {date_str}") from e
+            else:
+                # For other client errors, just log and continue or handle as appropriate
+                st.warning(f"Skipping {date_str} due to non-retriable Gemini API error.")
 
     return parsed_results
 
@@ -164,6 +186,12 @@ def plot_macro_and_commentary_timeline(macro_df: pd.DataFrame, sentiments: list[
 # ---------------------------------------------------------
 # 6. Pattern Recognition & Policy Forecasting
 # ---------------------------------------------------------
+@retry(
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    stop=stop_after_attempt(5),
+    reraise=True,
+    retry=(RetriableError)
+)
 @st.cache_data(ttl=3600) # Cache results for 1 hour
 def generate_macro_pattern_synthesis(macro_df: pd.DataFrame, sentiments: list[FOMCSentiment]) -> str:
     """
@@ -202,12 +230,20 @@ def generate_macro_pattern_synthesis(macro_df: pd.DataFrame, sentiments: list[FO
     model = genai.GenerativeModel(
         model_name="gemini-2.5-flash",
         generation_config={
-            "temperature": 0.2, 
-            "response_schema": FOMCSentiment.model_json_schema()
+            "temperature": 0.2,
+            "response_schema": protos.Schema.from_dict(FOMCSentiment.model_json_schema())
         }
     )
-    response = model.generate_content(contents=prompt)
-    return response.text
+    try:
+        response = model.generate_content(contents=prompt)
+        return response.text
+    except genai.types.ClientError as e:
+        st.error(f"Gemini API error during pattern synthesis: {e}")
+        if e.response.status_code == 429: # Resource Exhausted
+            raise RetriableError(f"Rate limit exceeded for pattern synthesis") from e
+        else:
+            st.warning(f"Skipping pattern synthesis due to non-retriable Gemini API error.")
+            return ""
 
 # ---------------------------------------------------------
 # Streamlit UI
@@ -232,7 +268,7 @@ if st.sidebar.button("Run Analysis"):
         st.error("Please provide your GEMINI_API_KEY in Colab secrets or environment variables.")
     if not FRED_API_KEY or FRED_API_KEY == "YOUR_FRED_API_KEY":
         st.error("Please provide your FRED_API_KEY in Colab secrets or environment variables.")
-    
+
     if (GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY") and \
        (FRED_API_KEY and FRED_API_KEY != "YOUR_FRED_API_KEY"):
         st.subheader("1. Scraping FOMC Statements")
