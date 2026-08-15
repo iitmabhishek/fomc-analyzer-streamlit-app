@@ -23,7 +23,7 @@ FRED_API_KEY = os.environ.get('FRED_API_KEY') or "YOUR_FRED_API_KEY"
 
 fred = Fred(api_key=FRED_API_KEY)
 genai.configure(api_key=GEMINI_API_KEY) # Configure the API key globally
-client = genai.Client() # Initialize the client without the api_key argument
+# client = genai.Client() # Removed - not needed with genai.configure()
 
 # ---------------------------------------------------------
 # 2. Automated FOMC Statement Scraper
@@ -109,8 +109,9 @@ def analyze_historical_statements(statements_dict: dict[str, str]) -> list[FOMCS
         STATEMENT TEXT:
         {text[:4000]}
         """
-        response = client.models.generate_content(
-            model="gemini-2.5-flash", # Using a fast model for sentiment analysis
+        response = genai.GenerativeModel(
+            model_name="gemini-2.5-flash" # Using a fast model for sentiment analysis
+        ).generate_content(
             contents=prompt,
             config={
                 "response_mime_type": "application/json",
@@ -199,8 +200,9 @@ def generate_macro_pattern_synthesis(macro_df: pd.DataFrame, sentiments: list[FO
     3. **Forward Macro Outlook:** Based on current macro trajectories and the latest guidance tone, forecast the monetary policy path over the next 6 months.
     """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
+    response = genai.GenerativeModel(
+        model_name="gemini-2.5-flash"
+    ).generate_content(
         contents=prompt,
         config={"temperature": 0.2}
     )
