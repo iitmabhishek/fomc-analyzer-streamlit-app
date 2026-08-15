@@ -119,7 +119,7 @@ def analyze_historical_statements(statements_dict: dict[str, str]) -> list[FOMCS
         Quantify its tone, summarize inflation/labor assessments, and extract key forward guidance.
 
         STATEMENT TEXT:
-        """{text[:4000]}"""
+        {text[:4000]}
         """
         response = client.models.generate_content(
             model="gemini-2.5-flash", # Using a fast model for sentiment analysis
