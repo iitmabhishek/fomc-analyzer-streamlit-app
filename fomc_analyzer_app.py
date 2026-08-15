@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 from typing import Literal
 from pydantic import BaseModel, Field
 from fredapi import Fred
-from google import genai
+import google.generativeai as genai # Corrected import statement
 from google.colab import userdata
 
 # Streamlit specific imports
