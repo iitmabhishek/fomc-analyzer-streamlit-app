@@ -22,7 +22,8 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') or "YOUR_GEMINI_API_KEY"
 FRED_API_KEY = os.environ.get('FRED_API_KEY') or "YOUR_FRED_API_KEY"
 
 fred = Fred(api_key=FRED_API_KEY)
-client = genai.Client(api_key=GEMINI_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY) # Configure the API key globally
+client = genai.Client() # Initialize the client without the api_key argument
 
 # ---------------------------------------------------------
 # 2. Automated FOMC Statement Scraper
