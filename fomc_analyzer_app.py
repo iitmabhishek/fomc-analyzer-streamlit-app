@@ -109,16 +109,15 @@ def analyze_historical_statements(statements_dict: dict[str, str]) -> list[FOMCS
         STATEMENT TEXT:
         {text[:4000]}
         """
-        response = genai.GenerativeModel(
-            model_name="gemini-2.5-flash" # Using a fast model for sentiment analysis
-        ).generate_content(
-            contents=prompt,
-            config={
+        model = genai.GenerativeModel(
+            model_name="gemini-2.5-flash", # Using a fast model for sentiment analysis
+            generation_config={
                 "response_mime_type": "application/json",
                 "response_schema": FOMCSentiment.model_json_schema(), # Pass JSON schema
                 "temperature": 0.0 # Keep temperature low for deterministic output
             }
         )
+        response = model.generate_content(contents=prompt)
         parsed_results.append(response.parsed)
         st.write(f"  ✓ Processed {date_str}: Score = {response.parsed.hawkish_score:+.2f} ({response.parsed.action_taken})")
 
@@ -200,12 +199,14 @@ def generate_macro_pattern_synthesis(macro_df: pd.DataFrame, sentiments: list[FO
     3. **Forward Macro Outlook:** Based on current macro trajectories and the latest guidance tone, forecast the monetary policy path over the next 6 months.
     """
 
-    response = genai.GenerativeModel(
-        model_name="gemini-2.5-flash"
-    ).generate_content(
-        contents=prompt,
-        config={"temperature": 0.2, "response_schema": FOMCSentiment.model_json_schema()}
+    model = genai.GenerativeModel(
+        model_name="gemini-2.5-flash",
+        generation_config={
+            "temperature": 0.2, 
+            "response_schema": FOMCSentiment.model_json_schema()
+        }
     )
+    response = model.generate_content(contents=prompt)
     return response.text
 
 # ---------------------------------------------------------
