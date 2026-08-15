@@ -8,8 +8,7 @@ from bs4 import BeautifulSoup
 from typing import Literal
 from pydantic import BaseModel, Field
 from fredapi import Fred
-import google.generativeai as genai # Corrected import statement
-from google.colab import userdata
+import google.generativeai as genai
 
 # Streamlit specific imports
 import streamlit as st
@@ -18,21 +17,9 @@ import streamlit as st
 # 1. API Configuration & Authentication
 # ---------------------------------------------------------
 
-gemini_api_key_from_userdata = None
-try:
-    gemini_api_key_from_userdata = userdata.get('GEMINI_API_KEY') # Corrected key name
-except userdata.SecretNotFoundError:
-    pass # Secret not found in userdata, will fallback
-
-GEMINI_API_KEY = gemini_api_key_from_userdata or os.environ.get('GEMINI_API_KEY') or "YOUR_GEMINI_API_KEY"
-
-fred_api_key_from_userdata = None
-try:
-    fred_api_key_from_userdata = userdata.get('FRED_API_KEY')
-except userdata.SecretNotFoundError:
-    pass # Secret not found in userdata, will fallback
-
-FRED_API_KEY = fred_api_key_from_userdata or os.environ.get('FRED_API_KEY') or "YOUR_FRED_API_KEY"
+# Retrieve API keys from environment variables (for Streamlit Cloud deployment)
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') or "YOUR_GEMINI_API_KEY"
+FRED_API_KEY = os.environ.get('FRED_API_KEY') or "YOUR_FRED_API_KEY"
 
 fred = Fred(api_key=FRED_API_KEY)
 client = genai.Client(api_key=GEMINI_API_KEY)
